@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la ../OddballVault 2>&1 || echo \"---trying alt---\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/typescript/package.json'\\).version\\)\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "Bash(npx vite *)",
+      "Bash(xxd \"/c/Users/AustinCarter/OddballVaultWeb/public/source_logo.png\")",
+      "Bash(xargs grep -ln \"UserProfile\")",
+      "Bash(cat > *)"
+    ]
+  }
+}

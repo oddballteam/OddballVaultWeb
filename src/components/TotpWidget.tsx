@@ -1,0 +1,43 @@
+import { useEffect, useState } from "react";
+import { getCurrentState, type TOTPState } from "../services/totpService";
+
+export function TotpWidget({ secret }: { secret: string }) {
+  const [state, setState] = useState<TOTPState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const next = await getCurrentState(secret);
+        if (!cancelled) setState(next);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Invalid TOTP secret.");
+      }
+    }
+    void tick();
+    const interval = setInterval(() => void tick(), 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [secret]);
+
+  if (error) return <p className="error-text">{error}</p>;
+  if (!state) return null;
+
+  return (
+    <div className="field-row">
+      <label>Authenticator code</label>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <span style={{ fontFamily: "Consolas, monospace", fontSize: "1.4rem", letterSpacing: "0.15em" }}>
+          {state.token}
+        </span>
+        <div className="strength-bar" style={{ flex: 1 }}>
+          <div style={{ width: `${(1 - state.progress) * 100}%`, background: "var(--accent)" }} />
+        </div>
+        <span className="muted">{state.secondsRemaining}s</span>
+      </div>
+    </div>
+  );
+}
