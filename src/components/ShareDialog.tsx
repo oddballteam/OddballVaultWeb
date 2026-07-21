@@ -3,6 +3,7 @@ import {
   changeRole,
   listGrants,
   revokeAccess,
+  searchDirectoryEmails,
   shareItemWithUser,
   transferOwnership,
   type GrantSummary,
@@ -33,6 +34,7 @@ export function ShareDialog({
 }) {
   const [grants, setGrants] = useState<GrantSummary[]>([]);
   const [email, setEmail] = useState("");
+  const [emailSuggestions, setEmailSuggestions] = useState<string[]>([]);
   const [role, setRole] = useState<Exclude<ItemRole, "owner">>("view");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,15 @@ export function ShareDialog({
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      void searchDirectoryEmails(email)
+        .then(setEmailSuggestions)
+        .catch(() => setEmailSuggestions([]));
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [email]);
 
   async function handleShare(e: React.FormEvent) {
     e.preventDefault();
@@ -142,7 +153,19 @@ export function ShareDialog({
         <form onSubmit={(e) => void handleShare(e)} style={{ marginTop: "1rem" }}>
           <div className="field-row">
             <label htmlFor="share-email">Share with (email)</label>
-            <input id="share-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input
+              id="share-email"
+              type="email"
+              list="share-email-suggestions"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <datalist id="share-email-suggestions">
+              {emailSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
           </div>
           <div className="field-row">
             <label>Role</label>

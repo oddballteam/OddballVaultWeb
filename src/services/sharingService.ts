@@ -41,6 +41,15 @@ export async function listGrants(itemId: string): Promise<GrantSummary[]> {
   );
 }
 
+/** Prefix search for the "Share with" autocomplete — user_directory is readable by any authenticated user (see 0002_users.sql). */
+export async function searchDirectoryEmails(prefix: string): Promise<string[]> {
+  const trimmed = prefix.trim();
+  if (trimmed.length < 2) return [];
+  const { data, error } = await supabase.from("user_directory").select("email").ilike("email", `${trimmed}%`).limit(10);
+  if (error) throw error;
+  return data.map((row) => row.email as string);
+}
+
 export async function shareItemWithUser(
   itemId: string,
   actorUserId: string,

@@ -25,15 +25,15 @@ export default function App() {
 }
 
 function AuthenticatedApp() {
-  const { user, isLoading, logout } = useAuth();
+  const { user, session, isLoading, logout } = useAuth();
   const [accountChecked, setAccountChecked] = useState(false);
   const [accountExists, setAccountExists] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
 
   const userId = user?.id ?? null;
   const email = user?.email ?? "";
-  const userGroups = getUserGroups(user);
-  const isAdmin = hasAdminGroup(user);
+  const userGroups = getUserGroups(session);
+  const isAdmin = hasAdminGroup(session);
 
   useEffect(() => {
     if (!userId) return;

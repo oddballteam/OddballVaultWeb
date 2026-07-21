@@ -5,7 +5,10 @@
 
 interface HookPayload {
   user_id: string;
-  claims: Record<string, unknown> & { email?: string };
+  claims: Record<string, unknown> & {
+    email?: string;
+    app_metadata?: Record<string, unknown>;
+  };
   authentication_method: string;
 }
 
@@ -38,6 +41,8 @@ Deno.serve(async (req: Request) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), OKTA_FETCH_TIMEOUT_MS);
 
+    console.log("inject-okta-groups: fetching Okta groups for email:", email);
+
     let response: Response;
     try {
       response = await fetch(
@@ -51,15 +56,20 @@ Deno.serve(async (req: Request) => {
       clearTimeout(timeout);
     }
 
+    console.log("inject-okta-groups: Okta API responded with status:", response.status);
+
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error("inject-okta-groups: Okta API error response:", errorText);
       throw new Error(`Okta API returned ${response.status}`);
     }
 
     const groups: OktaGroup[] = await response.json();
-    const modifiedClaims = {
-      ...claims,
-      groups: groups.map((g) => g.profile.name),
-    };
+    const modifiedClaims = { ...claims };
+    modifiedClaims.app_metadata = modifiedClaims.app_metadata || {};
+    modifiedClaims.app_metadata.groups = groups.map((g) => g.profile.name);
+
+    console.log("inject-okta-groups: injected groups:", modifiedClaims.app_metadata.groups);
 
     return new Response(JSON.stringify({ claims: modifiedClaims }), {
       headers: { "Content-Type": "application/json" },

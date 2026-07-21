@@ -1,18 +1,43 @@
-import type { User } from "@supabase/supabase-js";
+import type { Session } from "@supabase/supabase-js";
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 
 export const ADMIN_GROUP_NAME = "IT/Sec Admin";
+
+/** Base64url (JWT-flavored) decode — plain atob() rejects the -/_ alphabet and missing padding JWTs use. */
+function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
+  const segment = accessToken.split(".")[1];
+  if (!segment) return null;
+  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+  try {
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The full list of Okta groups synced onto the session — general-purpose,
  * used both for the admin check below and (going forward) for group-based
  * folder access once RLS is rewritten to key off this directly instead of
  * the app-managed group_memberships table.
+ *
+ * Reads app_metadata off the DECODED ACCESS TOKEN, not session.user —
+ * the Custom Access Token Hook (supabase/migrations/0008_okta_groups_via_app_metadata.sql)
+ * injects Okta's groups claim into the minted JWT only. It never writes back
+ * to the underlying auth.users row, so session.user.app_metadata (sourced
+ * from GoTrue's stored user record) never reflects it — only the token
+ * itself does.
  */
-export function getUserGroups(user: User | null): string[] {
-  const groups = user?.app_metadata?.groups;
-  return Array.isArray(groups) ? groups : [];
+export function getUserGroups(session: Session | null): string[] {
+  if (!session) return [];
+  const claims = decodeJwtPayload(session.access_token);
+  const groups = (claims?.app_metadata as { groups?: unknown } | undefined)?.groups;
+  if (Array.isArray(groups)) return groups;
+  // Mock auth's access_token isn't a real JWT — fall back to the mock user object.
+  const fallback = session.user?.app_metadata?.groups;
+  return Array.isArray(fallback) ? fallback : [];
 }
 
 /**
@@ -22,30 +47,9 @@ export function getUserGroups(user: User | null): string[] {
  * re-check the same "IT/Sec Admin" group claim from the JWT independently of
  * this client-side gate, since a client-side check alone can always be
  * bypassed (e.g. calling Supabase directly).
- *
- * Reads from app_metadata because that's where Supabase's own JWT surfaces
- * it — see supabase/migrations/0008_okta_groups_via_app_metadata.sql for
- * how Okta's groups claim gets copied in via a Custom Access Token Hook.
- * That hook requires a manual dashboard step; if it isn't enabled, this
- * will read as an empty array for everyone.
  */
-export function hasAdminGroup(user: User | null): boolean {
-  const groups = getUserGroups(user);
-
-  // TEMPORARY DEBUG LOG — remove once the Okta "groups" claim is confirmed
-  // to be propagating correctly end to end. If this logs [] or undefined
-  // for a user who IS assigned "IT/Sec Admin" in Okta, the bug is upstream
-  // of this function, most likely one of:
-  //   1. The Custom Access Token Hook (0008 migration) isn't enabled in
-  //      Supabase Dashboard → Authentication → Hooks — this is a manual
-  //      step that isn't run automatically by applying the migration.
-  //   2. Okta isn't actually returning a "groups" claim to Supabase (check
-  //      the Okta app's Groups Claim config and the requested scopes).
-  //   3. auth.identities.identity_data has no "groups" key for this user —
-  //      query it directly to confirm what Supabase actually received.
-  console.log("[adminAccess] user.app_metadata.groups:", groups);
-
-  return groups.includes(ADMIN_GROUP_NAME);
+export function hasAdminGroup(session: Session | null): boolean {
+  return getUserGroups(session).includes(ADMIN_GROUP_NAME);
 }
 
 /** Strictly rejects unless ADMIN_GROUP_NAME is present — no partial match, no case-insensitivity, no fallback. */

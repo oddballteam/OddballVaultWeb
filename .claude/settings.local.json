@@ -9,7 +9,9 @@
       "Bash(npx vite *)",
       "Bash(xxd \"/c/Users/AustinCarter/OddballVaultWeb/public/source_logo.png\")",
       "Bash(xargs grep -ln \"UserProfile\")",
-      "Bash(cat > *)"
+      "Bash(cat > *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }

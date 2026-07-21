@@ -67,15 +67,23 @@ export function AttachmentsPanel({ itemId, userId, canEdit }: { itemId: string; 
         </div>
       ))}
       {canEdit && (
-        <input
-          ref={fileInput}
-          type="file"
-          disabled={busy}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void handleUpload(file);
-          }}
-        />
+        <div className="file-picker-row">
+          <label htmlFor="attachment-file" className={`file-picker-button${busy ? " disabled" : ""}`}>
+            Choose File
+          </label>
+          <input
+            id="attachment-file"
+            ref={fileInput}
+            type="file"
+            className="file-picker-input"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleUpload(file);
+            }}
+          />
+          <span className="muted">{busy ? "Uploading…" : "No file chosen"}</span>
+        </div>
       )}
     </div>
   );
