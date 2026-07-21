@@ -36,6 +36,95 @@ interface ExportEnvelope {
   salt: string;
   nonce: string;
   ciphertext: string;
+  /**
+   * Present only in files from the desktop (Python) app — it stores the
+   * AES-GCM auth tag as a separate base64 field. Web Crypto's own output
+   * always has the tag appended to the ciphertext already, so this app's
+   * own exports never set this. See normalizeCiphertext() below.
+   */
+  tag?: string;
+}
+
+/** Desktop app's inner item shape (app/services/export_service.py) — snake_case, `fields` dict instead of `envelope`. */
+interface DesktopExportedItem {
+  type: ItemType;
+  title: string;
+  fields: Record<string, unknown>;
+  tags?: string;
+  attachments?: { filename: string; mime_type: string | null; data: string }[];
+  custom_fields?: { label: string; value: string; is_sensitive: boolean }[];
+}
+
+/** Maps desktop's snake_case field names (app/services/export_service.py's _ENCRYPTED_FIELD_NAMES) to the web's camelCase ItemEnvelope keys. */
+const DESKTOP_FIELD_KEY_MAP: Record<string, keyof ItemEnvelope> = {
+  username: "username",
+  password: "password",
+  url: "url",
+  totp_secret: "totpSecret",
+  notes: "notes",
+  cardholder_name: "cardholderName",
+  card_number: "cardNumber",
+  card_expiry: "cardExpiry",
+  card_cvv: "cardCvv",
+  card_pin: "cardPin",
+  full_name: "fullName",
+  email: "email",
+  phone: "phone",
+  address_line1: "addressLine1",
+  address_line2: "addressLine2",
+  city: "city",
+  state: "state",
+  postal_code: "postalCode",
+  country: "country",
+  ssh_host: "sshHost",
+  ssh_public_key: "sshPublicKey",
+  ssh_private_key: "sshPrivateKey",
+  service_name: "serviceName",
+  key_name: "keyName",
+  key_value: "keyValue",
+  endpoint: "endpoint",
+};
+
+function isDesktopExportedItem(raw: unknown): raw is DesktopExportedItem {
+  return typeof raw === "object" && raw !== null && "fields" in raw && "type" in raw;
+}
+
+/** Converts a desktop-app item (fields dict, snake_case) into this app's ExportedItem shape. */
+function normalizeDesktopItem(raw: DesktopExportedItem): ExportedItem {
+  const envelope: ItemEnvelope = { title: raw.title, tags: [], customFields: [] };
+  for (const [desktopKey, value] of Object.entries(raw.fields)) {
+    const webKey = DESKTOP_FIELD_KEY_MAP[desktopKey];
+    if (webKey && typeof value === "string") (envelope as unknown as Record<string, unknown>)[webKey] = value;
+  }
+  envelope.tags = (raw.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  envelope.customFields = (raw.custom_fields ?? []).map((cf) => ({
+    label: cf.label,
+    value: cf.value,
+    isSensitive: cf.is_sensitive,
+  }));
+
+  return {
+    itemType: raw.type,
+    envelope,
+    attachments: (raw.attachments ?? []).map((a) => ({
+      filename: a.filename,
+      mimeType: a.mime_type,
+      data: a.data,
+    })),
+  };
+}
+
+/**
+ * Reconstructs the single ciphertext blob Web Crypto's AES-GCM expects
+ * (ciphertext with the auth tag appended). This app's own exports already
+ * have the tag appended (that's just what crypto.subtle.encrypt() returns);
+ * the desktop app stores ciphertext and tag as two separate base64 fields
+ * (app/crypto/aes.py::encrypt_with_key), so those need concatenating first.
+ */
+function normalizeCiphertext(envelope: ExportEnvelope): string {
+  if (!envelope.tag) return envelope.ciphertext;
+  const combined = new Uint8Array([...fromBase64(envelope.ciphertext), ...fromBase64(envelope.tag)]);
+  return toBase64(combined);
 }
 
 export async function exportItems(itemIds: string[], exportPassword: string, userId: string): Promise<Blob> {
@@ -90,16 +179,17 @@ export async function importItems(
   const exportKeyBytes = await deriveMasterKey(exportPassword, salt);
   const exportKey = await importAesKey(exportKeyBytes);
 
-  let payload: { items: ExportedItem[] };
+  let payload: { items: (ExportedItem | DesktopExportedItem)[] };
   try {
-    const json = await decryptString(exportKey, envelope.nonce, envelope.ciphertext);
+    const json = await decryptString(exportKey, envelope.nonce, normalizeCiphertext(envelope));
     payload = JSON.parse(json);
   } catch {
     throw new Error("Incorrect export password, or the file is corrupted.");
   }
 
   let imported = 0;
-  for (const exported of payload.items) {
+  for (const raw of payload.items) {
+    const exported = isDesktopExportedItem(raw) ? normalizeDesktopItem(raw) : raw;
     const created = await createItem(exported.itemType, exported.envelope, owner);
     for (const attachment of exported.attachments) {
       const bytes = fromBase64(attachment.data);

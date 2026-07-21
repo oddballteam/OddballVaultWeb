@@ -9,6 +9,18 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// Required for browser calls: supabase.functions.invoke() sends a CORS preflight
+// OPTIONS request first. Without handling it explicitly (and echoing these headers
+// on every real response), the browser blocks the whole call before it ever reaches
+// the auth check below — surfaces client-side as "Failed to send a request to the
+// Edge Function" and, since the preflight has no Authorization header at all, would
+// otherwise get misread as a real 403 from the auth check further down.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 interface OktaUser {
   profile: { email?: string; login?: string };
 }
@@ -66,6 +78,10 @@ async function fetchAllOktaGroupMembers(oktaDomain: string, oktaApiToken: string
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     const authHeader = req.headers.get("Authorization");
     const claims = decodeJwtClaims(authHeader);
@@ -74,12 +90,12 @@ Deno.serve(async (req: Request) => {
     const isItSecAdmin = Array.isArray(callerGroups) && callerGroups.includes("IT/Sec Admin");
 
     if (!authHeader || !callerId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const { groupId } = await req.json();
     if (!groupId) {
-      return new Response(JSON.stringify({ error: "Missing groupId" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing groupId" }), { status: 400, headers: corsHeaders });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -95,7 +111,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", groupId)
       .single();
     if (groupError || !group) {
-      return new Response(JSON.stringify({ error: "Group folder not found" }), { status: 404 });
+      return new Response(JSON.stringify({ error: "Group folder not found" }), { status: 404, headers: corsHeaders });
     }
 
     if (!isItSecAdmin) {
@@ -107,25 +123,25 @@ Deno.serve(async (req: Request) => {
         .eq("role", "admin")
         .maybeSingle();
       if (!membership) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
       }
     }
 
     const oktaDomain = Deno.env.get("OKTA_DOMAIN");
     const oktaApiToken = Deno.env.get("OKTA_API_TOKEN");
     if (!oktaDomain || !oktaApiToken) {
-      return new Response(JSON.stringify({ error: "Okta integration not configured" }), { status: 200 });
+      return new Response(JSON.stringify({ error: "Okta integration not configured" }), { status: 200, headers: corsHeaders });
     }
 
     const emails = await fetchAllOktaGroupMembers(oktaDomain, oktaApiToken, group.okta_group_id);
     return new Response(JSON.stringify({ emails }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (err) {
     console.error("group-okta-members: failed", err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
   }

@@ -13,7 +13,9 @@
       "Bash(echo \"EXIT:$?\")",
       "Bash(git check-ignore *)",
       "Bash(supabase --version)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(find /c/Users/AustinCarter -maxdepth 3 -iname \"*vault_service*\" -o -iname \"*oddball*vault*\" 2>/dev/null | grep -v OddballVaultWeb | head -20)",
+      "Bash(xargs grep -l \"oddball-vault-record\\\\|export\\\\|argon2\\\\|AESGCM\")"
     ]
   }
 }
