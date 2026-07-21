@@ -57,9 +57,12 @@ export async function login(): Promise<void> {
   // Explicit scopes — without these Supabase can fail to get an email back
   // from the provider ("Error getting user email from external provider"),
   // since Okta only returns email/profile claims if actually requested.
+  // "groups" added so Okta includes group membership in the ID token —
+  // see the caveat on this in the chat response before assuming it's
+  // sufficient on its own.
   const { error } = await supabase.auth.signInWithOAuth({
     provider: OKTA_PROVIDER_ID,
-    options: { scopes: "openid email profile" },
+    options: { scopes: "openid profile email groups" },
   });
   if (error) throw error;
 }
