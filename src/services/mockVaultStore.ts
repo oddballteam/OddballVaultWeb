@@ -52,8 +52,10 @@ function toVaultItem(record: MockRecord, userId: string): VaultItem {
 
 export function mockListItems(
   userId: string,
-  options: { includeDeleted?: boolean; favoritesOnly?: boolean } = {},
+  options: { includeDeleted?: boolean; favoritesOnly?: boolean; ownerGroupId?: string } = {},
 ): VaultItem[] {
+  if (options.ownerGroupId) return []; // mock mode has no concept of group-owned items
+
   const wantDeleted = options.includeDeleted ?? false;
   let records = loadAll().filter((r) => r.isDeleted === wantDeleted);
   if (options.favoritesOnly) records = records.filter((r) => r.isFavorite);

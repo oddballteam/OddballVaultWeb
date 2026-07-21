@@ -1,20 +1,30 @@
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConfirmDangerModal } from "../components/ConfirmDangerModal";
+import { Dropdown } from "../components/Dropdown";
 import {
   deleteGroupFolder,
   listMembers,
   listMyGroups,
   reconcileGroupMembership,
-  removeMemberAndRekey,
   renameGroupFolder,
-  type GroupMemberSummary,
 } from "../services/groupService";
+import { createItem, listItems } from "../services/vaultService";
 import type { GroupRow } from "../types/db";
+import { emptyEnvelope, ITEM_TYPE_LABELS, type ItemType, type VaultItem } from "../types/vaultItem";
+import { ItemDetailView } from "./ItemDetailView";
 
-export function GroupsView({ userId }: { userId: string }) {
+const NEW_ITEM_OPTIONS = Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => ({
+  value: value as ItemType,
+  label,
+}));
+
+export function GroupsView({ userId, userEmail }: { userId: string; userEmail: string }) {
   const [groups, setGroups] = useState<GroupRow[]>([]);
-  const [selected, setSelected] = useState<GroupRow | null>(null);
-  const [members, setMembers] = useState<GroupMemberSummary[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<GroupRow | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [items, setItems] = useState<VaultItem[]>([]);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -25,51 +35,51 @@ export function GroupsView({ userId }: { userId: string }) {
     void listMyGroups(userId).then(setGroups);
   }, [userId]);
 
+  async function refreshItems(groupId: string) {
+    setItems(await listItems(userId, { ownerGroupId: groupId }));
+  }
+
   async function selectGroup(group: GroupRow) {
-    setSelected(group);
+    setSelectedGroup(group);
+    setSelectedItemId(null);
     setRenameValue(group.name);
     setNotice(null);
     setError(null);
-    const initialMembers = await listMembers(group.id);
-    setMembers(initialMembers);
 
-    const myMembership = initialMembers.find((m) => m.userId === userId);
-    if (myMembership?.role === "admin") {
+    // Membership itself isn't shown here (see AdminDashboardView for that) —
+    // this just determines whether the caller can manage the folder, and
+    // silently syncs with Okta if they can.
+    const members = await listMembers(group.id);
+    const mine = members.find((m) => m.userId === userId);
+    setIsAdmin(mine?.role === "admin");
+
+    if (mine?.role === "admin") {
       const result = await reconcileGroupMembership(group.id, userId);
-      if (!result.ok) {
-        setNotice(`Couldn't sync with Okta: ${result.error}. Membership shown may be stale.`);
-      }
-      setMembers(await listMembers(group.id));
+      if (!result.ok) setNotice(`Couldn't sync with Okta: ${result.error}.`);
     }
+
+    await refreshItems(group.id);
   }
 
-  const myMembership = members.find((m) => m.userId === userId);
-  const isAdmin = myMembership?.role === "admin";
-
-  async function handleRemoveMember(memberId: string) {
-    if (!selected) return;
-    if (!confirm("Remove this member? This rotates the group's keypair for everyone else.")) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await removeMemberAndRekey(selected.id, memberId, userId);
-      setMembers(await listMembers(selected.id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove member.");
-    } finally {
-      setBusy(false);
-    }
+  async function handleCreateItem(itemType: ItemType) {
+    if (!selectedGroup) return;
+    const created = await createItem(itemType, emptyEnvelope(`New ${ITEM_TYPE_LABELS[itemType]}`), {
+      type: "group",
+      groupId: selectedGroup.id,
+    });
+    await refreshItems(selectedGroup.id);
+    setSelectedItemId(created.id);
   }
 
   async function handleRename(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected || renameValue === selected.name) return;
+    if (!selectedGroup || renameValue === selectedGroup.name) return;
     setBusy(true);
     setError(null);
     try {
-      await renameGroupFolder(selected.id, renameValue, userId);
-      const renamed = { ...selected, name: renameValue };
-      setSelected(renamed);
+      await renameGroupFolder(selectedGroup.id, renameValue, userId);
+      const renamed = { ...selectedGroup, name: renameValue };
+      setSelectedGroup(renamed);
       setGroups((prev) => prev.map((g) => (g.id === renamed.id ? renamed : g)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to rename folder.");
@@ -79,13 +89,13 @@ export function GroupsView({ userId }: { userId: string }) {
   }
 
   async function handleDeleteConfirmed() {
-    if (!selected) return;
+    if (!selectedGroup) return;
     setBusy(true);
     setError(null);
     try {
-      await deleteGroupFolder(selected.id, userId, selected.name);
-      setGroups((prev) => prev.filter((g) => g.id !== selected.id));
-      setSelected(null);
+      await deleteGroupFolder(selectedGroup.id, userId, selectedGroup.name);
+      setGroups((prev) => prev.filter((g) => g.id !== selectedGroup.id));
+      setSelectedGroup(null);
       setDeleting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete folder.");
@@ -94,69 +104,100 @@ export function GroupsView({ userId }: { userId: string }) {
     }
   }
 
-  return (
-    <div className="detail-panel">
-      <h2>Group Folders</h2>
-      <p className="muted">
-        Membership is driven entirely by Okta group membership — there's no "add member" step
-        here. New folders are created by an IT/Sec Admin from the Admin Panel.
-      </p>
-      <div className="card">
-        {groups.length === 0 && <p className="muted">You aren't a member of any Group Folders yet.</p>}
-        {groups.map((group) => (
-          <div className="grant-row" key={group.id}>
-            <span>{group.name}</span>
-            <button className="secondary" onClick={() => void selectGroup(group)}>View members</button>
-          </div>
-        ))}
-      </div>
+  const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
 
-      {selected && (
+  if (!selectedGroup) {
+    return (
+      <div className="detail-panel">
+        <h2>Group Folders</h2>
+        <p className="muted">
+          Membership is driven entirely by Okta group membership — there's no "add member" step
+          here. New folders are created by an IT/Sec Admin from the Admin Panel.
+        </p>
         <div className="card">
-          <h3>{selected.name} members</h3>
-          {notice && <p className="muted">{notice}</p>}
-          {members.map((m) => (
-            <div className="grant-row" key={m.userId}>
-              <span>{m.email} <span className="muted">({m.role === "admin" ? "owner" : "editor"})</span></span>
-              {isAdmin && m.userId !== userId && (
-                <button className="danger" disabled={busy} onClick={() => void handleRemoveMember(m.userId)}>
-                  Remove
-                </button>
-              )}
+          {groups.length === 0 && <p className="muted">You aren't a member of any Group Folders yet.</p>}
+          {groups.map((group) => (
+            <div className="grant-row" key={group.id}>
+              <span>{group.name}</span>
+              <button className="secondary" onClick={() => void selectGroup(group)}>Open folder</button>
             </div>
           ))}
-
-          {error && <p className="error-text">{error}</p>}
-
-          {isAdmin && (
-            <>
-              <form onSubmit={(e) => void handleRename(e)} style={{ marginTop: "1rem" }}>
-                <div className="field-row">
-                  <label htmlFor="folder-name">Folder name</label>
-                  <input
-                    id="folder-name"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="field-actions">
-                  <button type="submit" disabled={busy || renameValue === selected.name}>Save name</button>
-                  <button type="button" className="danger" disabled={busy} onClick={() => setDeleting(true)}>
-                    Delete folder
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {deleting && selected && (
+  return (
+    <div className="main-panels">
+      <div className="item-list">
+        <button className="secondary" style={{ marginBottom: "0.75rem" }} onClick={() => setSelectedGroup(null)}>
+          ← Back to folders
+        </button>
+        <h3 style={{ marginTop: 0 }}>{selectedGroup.name}</h3>
+        <Dropdown<ItemType>
+          label="New item"
+          icon={<Plus size={16} />}
+          options={NEW_ITEM_OPTIONS}
+          onSelect={(type) => void handleCreateItem(type)}
+        />
+        {notice && <p className="muted">{notice}</p>}
+
+        {items.length === 0 && <p className="muted">No records in this folder yet.</p>}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className={`item-card ${item.id === selectedItemId ? "selected" : ""}`}
+            onClick={() => setSelectedItemId(item.id)}
+          >
+            <div className="title">{item.isFavorite ? "★ " : ""}{item.envelope.title}</div>
+            <div className="subtitle">{ITEM_TYPE_LABELS[item.itemType]}{item.envelope.username ? ` · ${item.envelope.username}` : ""}</div>
+          </div>
+        ))}
+
+        {isAdmin && (
+          <div className="card" style={{ marginTop: "1rem" }}>
+            <h4 style={{ marginTop: 0 }}>Manage folder</h4>
+            <form onSubmit={(e) => void handleRename(e)}>
+              <div className="field-row">
+                <label htmlFor="folder-name">Folder name</label>
+                <input
+                  id="folder-name"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  required
+                />
+              </div>
+              {error && <p className="error-text">{error}</p>}
+              <div className="field-actions">
+                <button type="submit" disabled={busy || renameValue === selectedGroup.name}>Save name</button>
+                <button type="button" className="danger" disabled={busy} onClick={() => setDeleting(true)}>
+                  Delete folder
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      <div className="detail-panel" style={{ padding: 0 }}>
+        {selectedItem ? (
+          <ItemDetailView
+            item={selectedItem}
+            userId={userId}
+            userEmail={userEmail}
+            onChanged={() => void refreshItems(selectedGroup.id)}
+            onDeleted={() => { setSelectedItemId(null); void refreshItems(selectedGroup.id); }}
+          />
+        ) : (
+          <p className="muted" style={{ padding: "1rem" }}>Select a record, or create a new one.</p>
+        )}
+      </div>
+
+      {deleting && (
         <ConfirmDangerModal
           title="Delete Group Folder"
-          message={`This permanently deletes "${selected.name}" and every item owned by it. This cannot be undone.`}
-          confirmPhrase={selected.name}
+          message={`This permanently deletes "${selectedGroup.name}" and every item owned by it. This cannot be undone.`}
+          confirmPhrase={selectedGroup.name}
           confirmLabel="Delete Folder Permanently"
           busy={busy}
           onConfirm={() => void handleDeleteConfirmed()}

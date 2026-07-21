@@ -60,7 +60,7 @@ export function VaultShell({
           <button className={nav === "settings" ? "active" : ""} onClick={() => setNav("settings")}>Settings</button>
         </div>
         {nav === "vault" && <VaultView userId={userId} userEmail={userEmail} />}
-        {nav === "groups" && <GroupsView userId={userId} />}
+        {nav === "groups" && <GroupsView userId={userId} userEmail={userEmail} />}
         {nav === "settings" && <SettingsView userId={userId} />}
       </div>
     </div>

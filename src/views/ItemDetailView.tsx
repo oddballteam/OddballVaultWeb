@@ -1,10 +1,21 @@
+import { Eye, EyeOff, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { PasswordField } from "../components/PasswordField";
 import { ShareDialog } from "../components/ShareDialog";
 import { TotpWidget } from "../components/TotpWidget";
 import { hardDelete, softDelete, toggleFavorite, updateItem } from "../services/vaultService";
-import { ROLE_LABELS, type ItemEnvelope, type ItemType, type VaultItem } from "../types/vaultItem";
+import { ROLE_LABELS, type CustomField, type ItemEnvelope, type ItemType, type VaultItem } from "../types/vaultItem";
+
+const MAX_CUSTOM_FIELDS = 5;
+const CLIPBOARD_CLEAR_MS = 30_000;
+
+async function copyWithAutoClear(value: string): Promise<void> {
+  await navigator.clipboard.writeText(value);
+  setTimeout(() => {
+    navigator.clipboard.writeText("").catch(() => undefined);
+  }, CLIPBOARD_CLEAR_MS);
+}
 
 type FieldConfig = { key: keyof ItemEnvelope; label: string; sensitive?: boolean; allowGenerate?: boolean };
 
@@ -64,18 +75,55 @@ export function ItemDetailView({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [revealedCustomFields, setRevealedCustomFields] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     setEnvelope(item.envelope);
     setDirty(false);
+    setIsEditing(false);
+    setRevealedCustomFields(new Set());
   }, [item.id, item.envelope]);
 
   const canEdit = item.myRole === "owner" || item.myRole === "edit_share" || item.myRole === "edit";
   const canManageSharing = item.myRole === "owner" || item.myRole === "edit_share";
+  const editable = canEdit && isEditing;
 
   function setField(key: keyof ItemEnvelope, value: string) {
     setEnvelope((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
+  }
+
+  function setCustomField(index: number, patch: Partial<CustomField>) {
+    setEnvelope((prev) => {
+      const customFields = [...prev.customFields];
+      customFields[index] = { ...customFields[index], ...patch };
+      return { ...prev, customFields };
+    });
+    setDirty(true);
+  }
+
+  function addCustomField() {
+    if (envelope.customFields.length >= MAX_CUSTOM_FIELDS) return;
+    setEnvelope((prev) => ({
+      ...prev,
+      customFields: [...prev.customFields, { label: "", value: "", isSensitive: false }],
+    }));
+    setDirty(true);
+  }
+
+  function removeCustomField(index: number) {
+    setEnvelope((prev) => ({ ...prev, customFields: prev.customFields.filter((_, i) => i !== index) }));
+    setDirty(true);
+  }
+
+  function toggleRevealCustomField(index: number) {
+    setRevealedCustomFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -83,10 +131,17 @@ export function ItemDetailView({
     try {
       await updateItem(item.id, envelope, userId);
       setDirty(false);
+      setIsEditing(false);
       onChanged();
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCancelEdit() {
+    setEnvelope(item.envelope);
+    setDirty(false);
+    setIsEditing(false);
   }
 
   async function handleFavorite() {
@@ -115,7 +170,7 @@ export function ItemDetailView({
           <input
             value={envelope.title}
             onChange={(e) => setField("title", e.target.value)}
-            readOnly={!canEdit}
+            readOnly={!editable}
             style={{ fontSize: "1.3rem", fontWeight: 600 }}
           />
         </div>
@@ -125,6 +180,38 @@ export function ItemDetailView({
           </button>
           {canManageSharing && (
             <button className="secondary" onClick={() => setSharing((s) => !s)}>Share</button>
+          )}
+          {canEdit && !isEditing && (
+            <button
+              className="icon-button"
+              title="Edit"
+              aria-label="Edit"
+              onClick={() => setIsEditing(true)}
+            >
+              <Pencil size={18} />
+            </button>
+          )}
+          {canEdit && isEditing && (
+            <>
+              <button
+                className="icon-button"
+                title="Cancel"
+                aria-label="Cancel"
+                onClick={handleCancelEdit}
+                disabled={saving}
+              >
+                <X size={18} />
+              </button>
+              <button
+                className="icon-button"
+                title="Save"
+                aria-label="Save"
+                disabled={!dirty || saving}
+                onClick={() => void handleSave()}
+              >
+                <Save size={18} />
+              </button>
+            </>
           )}
           <button className="danger" onClick={() => void handleDelete()}>
             {item.isDeleted ? "Delete permanently" : "Move to trash"}
@@ -153,8 +240,8 @@ export function ItemDetailView({
               key={field.key}
               label={field.label}
               value={(envelope[field.key] as string) ?? ""}
-              onChange={canEdit ? (v) => setField(field.key, v) : undefined}
-              readOnly={!canEdit}
+              onChange={editable ? (v) => setField(field.key, v) : undefined}
+              readOnly={!editable}
               allowGenerate={field.allowGenerate}
             />
           ) : (
@@ -163,7 +250,7 @@ export function ItemDetailView({
               <input
                 value={(envelope[field.key] as string) ?? ""}
                 onChange={(e) => setField(field.key, e.target.value)}
-                readOnly={!canEdit}
+                readOnly={!editable}
               />
             </div>
           ),
@@ -174,8 +261,8 @@ export function ItemDetailView({
         <PasswordField
           label="Notes"
           value={envelope.notes ?? ""}
-          onChange={canEdit ? (v) => setField("notes", v) : undefined}
-          readOnly={!canEdit}
+          onChange={editable ? (v) => setField("notes", v) : undefined}
+          readOnly={!editable}
           multiline
         />
         <div className="field-row">
@@ -186,13 +273,68 @@ export function ItemDetailView({
               setEnvelope((prev) => ({ ...prev, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) }));
               setDirty(true);
             }}
-            readOnly={!canEdit}
+            readOnly={!editable}
           />
         </div>
+      </div>
 
-        {canEdit && (
-          <button disabled={!dirty || saving} onClick={() => void handleSave()}>
-            {saving ? "Saving…" : "Save changes"}
+      <div className="card">
+        <h4 style={{ marginTop: 0 }}>Custom Fields</h4>
+        {envelope.customFields.length === 0 && <p className="muted">No custom fields.</p>}
+        {envelope.customFields.map((field, index) => (
+          <div className="field-row" key={index}>
+            <input
+              value={field.label}
+              onChange={(e) => setCustomField(index, { label: e.target.value })}
+              readOnly={!editable}
+              placeholder="Field name"
+              style={{ marginBottom: "0.4rem" }}
+            />
+            <input
+              type={field.isSensitive && !revealedCustomFields.has(index) ? "password" : "text"}
+              value={field.value}
+              onChange={(e) => setCustomField(index, { value: e.target.value })}
+              readOnly={!editable}
+            />
+            <div className="field-actions" style={{ marginTop: "0.4rem" }}>
+              {field.isSensitive && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => toggleRevealCustomField(index)}
+                >
+                  {revealedCustomFields.has(index) ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              )}
+              <button type="button" className="secondary" onClick={() => void copyWithAutoClear(field.value)}>
+                Copy
+              </button>
+              <label className="checkbox-option">
+                <input
+                  type="checkbox"
+                  checked={field.isSensitive}
+                  disabled={!editable}
+                  onChange={(e) => setCustomField(index, { isSensitive: e.target.checked })}
+                />
+                Sensitive
+              </label>
+              {editable && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="Remove custom field"
+                  aria-label="Remove custom field"
+                  onClick={() => removeCustomField(index)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {editable && envelope.customFields.length < MAX_CUSTOM_FIELDS && (
+          <button type="button" className="secondary" onClick={addCustomField}>
+            <Plus size={16} /> Add custom field
           </button>
         )}
       </div>

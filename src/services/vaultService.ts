@@ -109,12 +109,13 @@ export async function getItem(itemId: string, userId: string): Promise<VaultItem
 
 export async function listItems(
   userId: string,
-  options: { includeDeleted?: boolean; favoritesOnly?: boolean } = {},
+  options: { includeDeleted?: boolean; favoritesOnly?: boolean; ownerGroupId?: string } = {},
 ): Promise<VaultItem[]> {
   if (env.mockAuthEnabled) return mockListItems(userId, options);
 
   let query = supabase.from("items").select("*").eq("is_deleted", options.includeDeleted ?? false);
   if (options.favoritesOnly) query = query.eq("is_favorite", true);
+  if (options.ownerGroupId) query = query.eq("owner_group_id", options.ownerGroupId);
   const { data, error } = await query.order("updated_at", { ascending: false });
   if (error) throw error;
 
