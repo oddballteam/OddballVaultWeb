@@ -251,3 +251,51 @@ export async function transferOwnership(
   const envelope = await decryptEnvelope(itemKey, item.nonce, item.ciphertext);
   await logEnterpriseAuditEvent("ownership_transferred", actorEmail, targetEmail, envelope.title);
 }
+
+/**
+ * Moves a personally-owned item into a Group Folder — unlike transferOwnership
+ * (which repoints ownership between grantees that ALREADY have a wrapped
+ * copy of the Item Key), the group here has never seen this item before, so
+ * a fresh item_keys grant must be created for it first. Order matters: the
+ * new group grant is inserted BEFORE the actor's own direct grant is
+ * removed, so a failure partway through can never leave the item with zero
+ * valid grants (undecryptable by anyone).
+ */
+export async function moveItemToGroup(itemId: string, actorUserId: string, groupId: string): Promise<void> {
+  const { data: group, error: groupError } = await supabase.from("groups").select("public_key").eq("id", groupId).single();
+  if (groupError) throw groupError;
+
+  const { data: item, error: itemError } = await supabase.from("items").select("key_version").eq("id", itemId).single();
+  if (itemError) throw itemError;
+
+  const rawItemKey = await resolveItemKeyRaw(itemId, actorUserId);
+  const groupPublicKey = await importPublicKey(group.public_key);
+  const wrappedItemKey = await wrapKey(rawItemKey, groupPublicKey);
+
+  const { error: grantError } = await supabase.from("item_keys").insert({
+    item_id: itemId,
+    grantee_type: "group",
+    grantee_id: groupId,
+    wrapped_item_key: wrappedItemKey,
+    role: "owner",
+    key_version: (item as Pick<ItemRow, "key_version">).key_version,
+    granted_by: actorUserId,
+  });
+  if (grantError) throw grantError;
+
+  const { error: revokeError } = await supabase
+    .from("item_keys")
+    .delete()
+    .eq("item_id", itemId)
+    .eq("grantee_type", "user")
+    .eq("grantee_id", actorUserId);
+  if (revokeError) throw revokeError;
+
+  const { error: updateError } = await supabase
+    .from("items")
+    .update({ owner_user_id: null, owner_group_id: groupId })
+    .eq("id", itemId);
+  if (updateError) throw updateError;
+
+  await logEvent(actorUserId, "role_changed", { itemId, detail: `Moved into group ${groupId}` });
+}

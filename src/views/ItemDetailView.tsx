@@ -1,10 +1,14 @@
-import { Eye, EyeOff, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, FolderInput, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
+import { Dropdown } from "../components/Dropdown";
 import { PasswordField } from "../components/PasswordField";
 import { ShareDialog } from "../components/ShareDialog";
 import { TotpWidget } from "../components/TotpWidget";
+import { listMyGroups } from "../services/groupService";
+import { moveItemToGroup } from "../services/sharingService";
 import { hardDelete, softDelete, toggleFavorite, updateItem } from "../services/vaultService";
+import type { GroupRow } from "../types/db";
 import { ROLE_LABELS, type CustomField, type ItemEnvelope, type ItemType, type VaultItem } from "../types/vaultItem";
 
 const MAX_CUSTOM_FIELDS = 5;
@@ -77,16 +81,25 @@ export function ItemDetailView({
   const [sharing, setSharing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [revealedCustomFields, setRevealedCustomFields] = useState<Set<number>>(new Set());
+  const [myGroups, setMyGroups] = useState<GroupRow[]>([]);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
 
   useEffect(() => {
     setEnvelope(item.envelope);
     setDirty(false);
     setIsEditing(false);
     setRevealedCustomFields(new Set());
+    setMoveError(null);
   }, [item.id, item.envelope]);
+
+  useEffect(() => {
+    void listMyGroups(userId).then(setMyGroups);
+  }, [userId]);
 
   const canEdit = item.myRole === "owner" || item.myRole === "edit_share" || item.myRole === "edit";
   const canManageSharing = item.myRole === "owner" || item.myRole === "edit_share";
+  const canMoveToFolder = item.myRole === "owner" && !item.ownerGroupId && myGroups.length > 0;
   const editable = canEdit && isEditing;
 
   function setField(key: keyof ItemEnvelope, value: string) {
@@ -161,12 +174,27 @@ export function ItemDetailView({
     }
   }
 
-  const fields = FIELDS_BY_TYPE[item.itemType];
+  async function handleMoveToGroup(groupId: string) {
+    setMoveError(null);
+    setMoving(true);
+    try {
+      await moveItemToGroup(item.id, userId, groupId);
+      onChanged();
+    } catch (err) {
+      setMoveError(err instanceof Error ? err.message : "Failed to move item.");
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  const fields = FIELDS_BY_TYPE[item.itemType].filter((field) => isEditing || Boolean(envelope[field.key]));
+  const hasNotes = isEditing || Boolean(envelope.notes);
+  const hasTags = isEditing || envelope.tags.length > 0;
 
   return (
     <div className="detail-panel">
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-        <div className="field-row" style={{ flex: 1, minWidth: "200px" }}>
+        <div className="field-row" style={{ flex: 1, minWidth: "200px", marginBottom: 0 }}>
           <input
             value={envelope.title}
             onChange={(e) => setField("title", e.target.value)}
@@ -181,25 +209,23 @@ export function ItemDetailView({
           {canManageSharing && (
             <button className="secondary" onClick={() => setSharing((s) => !s)}>Share</button>
           )}
+          {canMoveToFolder && (
+            <Dropdown<string>
+              label="Move to folder"
+              icon={<FolderInput size={16} />}
+              options={myGroups.map((g) => ({ value: g.id, label: g.name }))}
+              disabled={moving}
+              onSelect={(groupId) => void handleMoveToGroup(groupId)}
+            />
+          )}
           {canEdit && !isEditing && (
-            <button
-              className="icon-button"
-              title="Edit"
-              aria-label="Edit"
-              onClick={() => setIsEditing(true)}
-            >
+            <button className="icon-button" title="Edit" aria-label="Edit" onClick={() => setIsEditing(true)}>
               <Pencil size={18} />
             </button>
           )}
           {canEdit && isEditing && (
             <>
-              <button
-                className="icon-button"
-                title="Cancel"
-                aria-label="Cancel"
-                onClick={handleCancelEdit}
-                disabled={saving}
-              >
+              <button className="icon-button" title="Cancel" aria-label="Cancel" onClick={handleCancelEdit} disabled={saving}>
                 <X size={18} />
               </button>
               <button
@@ -220,6 +246,7 @@ export function ItemDetailView({
       </div>
 
       <span className="muted">Your role: {ROLE_LABELS[item.myRole]}</span>
+      {moveError && <p className="error-text">{moveError}</p>}
 
       {sharing && (
         <ShareDialog
@@ -258,83 +285,85 @@ export function ItemDetailView({
 
         {item.itemType === "login" && envelope.totpSecret && <TotpWidget secret={envelope.totpSecret} />}
 
-        <PasswordField
-          label="Notes"
-          value={envelope.notes ?? ""}
-          onChange={editable ? (v) => setField("notes", v) : undefined}
-          readOnly={!editable}
-          multiline
-        />
-        <div className="field-row">
-          <label>Tags (comma-separated)</label>
-          <input
-            value={envelope.tags.join(", ")}
-            onChange={(e) => {
-              setEnvelope((prev) => ({ ...prev, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) }));
-              setDirty(true);
-            }}
+        {hasNotes && (
+          <PasswordField
+            label="Notes"
+            value={envelope.notes ?? ""}
+            onChange={editable ? (v) => setField("notes", v) : undefined}
             readOnly={!editable}
+            multiline
           />
-        </div>
-      </div>
-
-      <div className="card">
-        <h4 style={{ marginTop: 0 }}>Custom Fields</h4>
-        {envelope.customFields.length === 0 && <p className="muted">No custom fields.</p>}
-        {envelope.customFields.map((field, index) => (
-          <div className="field-row" key={index}>
+        )}
+        {hasTags && (
+          <div className="field-row">
+            <label>Tags (comma-separated)</label>
             <input
-              value={field.label}
-              onChange={(e) => setCustomField(index, { label: e.target.value })}
-              readOnly={!editable}
-              placeholder="Field name"
-              style={{ marginBottom: "0.4rem" }}
-            />
-            <input
-              type={field.isSensitive && !revealedCustomFields.has(index) ? "password" : "text"}
-              value={field.value}
-              onChange={(e) => setCustomField(index, { value: e.target.value })}
+              value={envelope.tags.join(", ")}
+              onChange={(e) => {
+                setEnvelope((prev) => ({ ...prev, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) }));
+                setDirty(true);
+              }}
               readOnly={!editable}
             />
-            <div className="field-actions" style={{ marginTop: "0.4rem" }}>
-              {field.isSensitive && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => toggleRevealCustomField(index)}
-                >
-                  {revealedCustomFields.has(index) ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              )}
-              <button type="button" className="secondary" onClick={() => void copyWithAutoClear(field.value)}>
-                Copy
-              </button>
-              <label className="checkbox-option">
-                <input
-                  type="checkbox"
-                  checked={field.isSensitive}
-                  disabled={!editable}
-                  onChange={(e) => setCustomField(index, { isSensitive: e.target.checked })}
-                />
-                Sensitive
-              </label>
-              {editable && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  title="Remove custom field"
-                  aria-label="Remove custom field"
-                  onClick={() => removeCustomField(index)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </div>
           </div>
-        ))}
-        {editable && envelope.customFields.length < MAX_CUSTOM_FIELDS && (
+        )}
+
+        {envelope.customFields
+          .map((field, index) => ({ field, index }))
+          .filter(({ field }) => isEditing || field.value)
+          .map(({ field, index }) =>
+            isEditing ? (
+              <div className="field-row" key={index}>
+                <input
+                  value={field.label}
+                  onChange={(e) => setCustomField(index, { label: e.target.value })}
+                  placeholder="Field name"
+                  style={{ marginBottom: "0.4rem" }}
+                />
+                <input
+                  type={field.isSensitive && !revealedCustomFields.has(index) ? "password" : "text"}
+                  value={field.value}
+                  onChange={(e) => setCustomField(index, { value: e.target.value })}
+                />
+                <div className="field-actions" style={{ marginTop: "0.4rem" }}>
+                  {field.isSensitive && (
+                    <button type="button" className="secondary" onClick={() => toggleRevealCustomField(index)}>
+                      {revealedCustomFields.has(index) ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  )}
+                  <button type="button" className="secondary" onClick={() => void copyWithAutoClear(field.value)}>
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className={field.isSensitive ? "" : "secondary"}
+                    onClick={() => setCustomField(index, { isSensitive: !field.isSensitive })}
+                  >
+                    Sensitive
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Remove field"
+                    aria-label="Remove field"
+                    onClick={() => removeCustomField(index)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : field.isSensitive ? (
+              <PasswordField key={index} label={field.label} value={field.value} readOnly />
+            ) : (
+              <div className="field-row" key={index}>
+                <label>{field.label}</label>
+                <input value={field.value} readOnly />
+              </div>
+            ),
+          )}
+        {isEditing && envelope.customFields.length < MAX_CUSTOM_FIELDS && (
           <button type="button" className="secondary" onClick={addCustomField}>
-            <Plus size={16} /> Add custom field
+            <Plus size={16} /> Add field
           </button>
         )}
       </div>

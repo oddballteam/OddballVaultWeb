@@ -1,5 +1,5 @@
 import { Dices } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { PasswordGeneratorModal } from "./PasswordGeneratorModal";
 
 const CLIPBOARD_CLEAR_MS = 30_000;
@@ -12,7 +12,8 @@ export function PasswordField({
   allowGenerate = false,
   multiline = false,
 }: {
-  label: string;
+  /** Usually a string, but can be an editable <input> (e.g. custom fields' user-named label) instead of static text. */
+  label: ReactNode;
   value: string;
   onChange?: (value: string) => void;
   readOnly?: boolean;
