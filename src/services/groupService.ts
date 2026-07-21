@@ -21,6 +21,23 @@ import type { GroupMembershipRow, GroupRow, ItemKeyRow } from "../types/db";
 import { isAllowedTenantEmail } from "../utils/tenantEmail";
 import { logEvent } from "./auditService";
 
+export interface OktaGroupSummary {
+  id: string;
+  name: string;
+}
+
+/** Name-based search so admins don't have to manually look up/paste a raw Okta group ID (see search-okta-groups Edge Function). */
+export async function searchOktaGroups(query: string): Promise<OktaGroupSummary[]> {
+  if (query.trim().length < 2) return [];
+  const { data, error } = await supabase.functions.invoke<{ groups?: OktaGroupSummary[]; error?: string }>(
+    "search-okta-groups",
+    { body: { query } },
+  );
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data?.groups ?? [];
+}
+
 /** Admin-panel-only: every Group Folder, regardless of the caller's own membership (gated by groups_select_it_sec_admins RLS). */
 export async function listAllGroups(): Promise<GroupRow[]> {
   const { data, error } = await supabase.from("groups").select("*").order("name");

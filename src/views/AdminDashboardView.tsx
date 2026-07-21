@@ -8,8 +8,10 @@ import {
   createGroupFolder,
   listAllGroups,
   listMembers,
+  searchOktaGroups,
   setMemberRole,
   type GroupMemberSummary,
+  type OktaGroupSummary,
 } from "../services/groupService";
 import type { EnterpriseAuditLogRow, GroupRow } from "../types/db";
 
@@ -31,7 +33,9 @@ export function AdminDashboardView({ userId }: { userId: string }) {
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [groupMembers, setGroupMembers] = useState<GroupMemberSummary[]>([]);
   const [newFolderName, setNewFolderName] = useState("");
-  const [newFolderOktaGroupId, setNewFolderOktaGroupId] = useState("");
+  const [oktaGroupQuery, setOktaGroupQuery] = useState("");
+  const [oktaGroupResults, setOktaGroupResults] = useState<OktaGroupSummary[]>([]);
+  const [selectedOktaGroup, setSelectedOktaGroup] = useState<OktaGroupSummary | null>(null);
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
 
@@ -48,14 +52,26 @@ export function AdminDashboardView({ userId }: { userId: string }) {
     void refreshGroups();
   }, []);
 
+  useEffect(() => {
+    if (selectedOktaGroup) return; // don't re-search right after picking a result
+    const handle = setTimeout(() => {
+      void searchOktaGroups(oktaGroupQuery)
+        .then(setOktaGroupResults)
+        .catch(() => setOktaGroupResults([]));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [oktaGroupQuery, selectedOktaGroup]);
+
   async function handleCreateFolder(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedOktaGroup) return;
     setGroupError(null);
     setGroupBusy(true);
     try {
-      await createGroupFolder(newFolderName, newFolderOktaGroupId, userId);
+      await createGroupFolder(newFolderName, selectedOktaGroup.id, userId);
       setNewFolderName("");
-      setNewFolderOktaGroupId("");
+      setOktaGroupQuery("");
+      setSelectedOktaGroup(null);
       await refreshGroups();
     } catch (err) {
       setGroupError(err instanceof Error ? err.message : "Failed to create group folder.");
@@ -206,17 +222,41 @@ export function AdminDashboardView({ userId }: { userId: string }) {
               />
             </div>
             <div className="field-row">
-              <label htmlFor="new-folder-okta-id">Okta Group ID</label>
+              <label htmlFor="okta-group-search">Okta Group</label>
               <input
-                id="new-folder-okta-id"
-                value={newFolderOktaGroupId}
-                onChange={(e) => setNewFolderOktaGroupId(e.target.value)}
-                placeholder="e.g. 00g1a2b3c4d5e6f7g8h9"
+                id="okta-group-search"
+                value={oktaGroupQuery}
+                onChange={(e) => {
+                  setOktaGroupQuery(e.target.value);
+                  setSelectedOktaGroup(null);
+                }}
+                placeholder="Search Okta groups by name…"
+                autoComplete="off"
                 required
               />
+              {!selectedOktaGroup && oktaGroupResults.length > 0 && (
+                <div className="card" style={{ padding: "0.4rem", marginTop: "0.4rem" }}>
+                  {oktaGroupResults.map((g) => (
+                    <button
+                      type="button"
+                      key={g.id}
+                      className="secondary"
+                      style={{ width: "100%", marginBottom: "0.3rem", textAlign: "left" }}
+                      onClick={() => {
+                        setSelectedOktaGroup(g);
+                        setOktaGroupQuery(g.name);
+                        setOktaGroupResults([]);
+                      }}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedOktaGroup && <p className="muted">Selected: {selectedOktaGroup.name}</p>}
             </div>
             {groupError && <p className="error-text">{groupError}</p>}
-            <button type="submit" disabled={groupBusy}>Create Group Folder</button>
+            <button type="submit" disabled={groupBusy || !selectedOktaGroup}>Create Group Folder</button>
           </form>
 
           {groups.map((group) => (
