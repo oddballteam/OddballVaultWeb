@@ -2,10 +2,23 @@ import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ConfirmDangerModal } from "../components/ConfirmDangerModal";
+import { Dropdown } from "../components/Dropdown";
 import { listAuditLogs, nukeUserVault } from "../services/adminService";
-import type { EnterpriseAuditLogRow } from "../types/db";
+import {
+  createGroupFolder,
+  listAllGroups,
+  listMembers,
+  setMemberRole,
+  type GroupMemberSummary,
+} from "../services/groupService";
+import type { EnterpriseAuditLogRow, GroupRow } from "../types/db";
 
-export function AdminDashboardView() {
+const OWNER_ROLE_OPTIONS = [
+  { value: "member" as const, label: "Editor" },
+  { value: "admin" as const, label: "Owner" },
+];
+
+export function AdminDashboardView({ userId }: { userId: string }) {
   const [logs, setLogs] = useState<EnterpriseAuditLogRow[]>([]);
   const [search, setSearch] = useState("");
   const [wipeTarget, setWipeTarget] = useState<string | null>(null);
@@ -14,13 +27,65 @@ export function AdminDashboardView() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const [groupMembers, setGroupMembers] = useState<GroupMemberSummary[]>([]);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderOktaGroupId, setNewFolderOktaGroupId] = useState("");
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
+
   async function refresh() {
     setLogs(await listAuditLogs());
   }
 
+  async function refreshGroups() {
+    setGroups(await listAllGroups());
+  }
+
   useEffect(() => {
     void refresh();
+    void refreshGroups();
   }, []);
+
+  async function handleCreateFolder(e: React.FormEvent) {
+    e.preventDefault();
+    setGroupError(null);
+    setGroupBusy(true);
+    try {
+      await createGroupFolder(newFolderName, newFolderOktaGroupId, userId);
+      setNewFolderName("");
+      setNewFolderOktaGroupId("");
+      await refreshGroups();
+    } catch (err) {
+      setGroupError(err instanceof Error ? err.message : "Failed to create group folder.");
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  async function handleExpandGroup(group: GroupRow) {
+    if (expandedGroupId === group.id) {
+      setExpandedGroupId(null);
+      return;
+    }
+    setExpandedGroupId(group.id);
+    setGroupMembers(await listMembers(group.id));
+  }
+
+  async function handleRoleChange(memberId: string, role: "member" | "admin") {
+    if (!expandedGroupId) return;
+    setGroupBusy(true);
+    setGroupError(null);
+    try {
+      await setMemberRole(expandedGroupId, memberId, role, userId);
+      setGroupMembers(await listMembers(expandedGroupId));
+    } catch (err) {
+      setGroupError(err instanceof Error ? err.message : "Failed to change role.");
+    } finally {
+      setGroupBusy(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -119,6 +184,72 @@ export function AdminDashboardView() {
           <button className="danger" disabled={!wipeEmail} onClick={() => setWipeTarget(wipeEmail)}>
             Wipe User Vault
           </button>
+        </div>
+
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Group Folders</h2>
+          <p className="muted">
+            Folder visibility is driven entirely by live Okta group membership — there's no
+            manual member list to maintain here. Pick which existing members are folder owners
+            (full control) vs. editors (everyone else, capped — can't delete or manage the
+            folder).
+          </p>
+
+          <form onSubmit={(e) => void handleCreateFolder(e)} style={{ marginBottom: "1rem" }}>
+            <div className="field-row">
+              <label htmlFor="new-folder-name">Folder name</label>
+              <input
+                id="new-folder-name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="field-row">
+              <label htmlFor="new-folder-okta-id">Okta Group ID</label>
+              <input
+                id="new-folder-okta-id"
+                value={newFolderOktaGroupId}
+                onChange={(e) => setNewFolderOktaGroupId(e.target.value)}
+                placeholder="e.g. 00g1a2b3c4d5e6f7g8h9"
+                required
+              />
+            </div>
+            {groupError && <p className="error-text">{groupError}</p>}
+            <button type="submit" disabled={groupBusy}>Create Group Folder</button>
+          </form>
+
+          {groups.map((group) => (
+            <div key={group.id}>
+              <div className="grant-row">
+                <span>
+                  {group.name} <span className="muted">({group.okta_group_id})</span>
+                </span>
+                <button className="secondary" onClick={() => void handleExpandGroup(group)}>
+                  {expandedGroupId === group.id ? "Hide members" : "View members"}
+                </button>
+              </div>
+              {expandedGroupId === group.id && (
+                <div style={{ marginLeft: "1rem", marginBottom: "0.5rem" }}>
+                  {groupMembers.length === 0 && (
+                    <p className="muted">No synced members yet — an owner needs to view this folder once for it to sync with Okta.</p>
+                  )}
+                  {groupMembers.map((m) => (
+                    <div className="grant-row" key={m.userId}>
+                      <span>{m.email}</span>
+                      <Dropdown<"member" | "admin">
+                        label={m.role === "admin" ? "Owner" : "Editor"}
+                        options={OWNER_ROLE_OPTIONS}
+                        disabled={groupBusy}
+                        onSelect={(role) => void handleRoleChange(m.userId, role)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {groups.length === 0 && <p className="muted">No Group Folders yet.</p>}
         </div>
       </div>
 

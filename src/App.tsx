@@ -82,7 +82,7 @@ function AuthenticatedApp() {
         path="/admin"
         element={
           <AdminRoute isAdmin={isAdmin}>
-            <AdminDashboardView />
+            <AdminDashboardView userId={userId} />
           </AdminRoute>
         }
       />

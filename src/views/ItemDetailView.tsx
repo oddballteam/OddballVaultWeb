@@ -171,15 +171,13 @@ export function ItemDetailView({
 
         {item.itemType === "login" && envelope.totpSecret && <TotpWidget secret={envelope.totpSecret} />}
 
-        <div className="field-row">
-          <label>Notes</label>
-          <textarea
-            rows={4}
-            value={envelope.notes ?? ""}
-            onChange={(e) => setField("notes", e.target.value)}
-            readOnly={!canEdit}
-          />
-        </div>
+        <PasswordField
+          label="Notes"
+          value={envelope.notes ?? ""}
+          onChange={canEdit ? (v) => setField("notes", v) : undefined}
+          readOnly={!canEdit}
+          multiline
+        />
         <div className="field-row">
           <label>Tags (comma-separated)</label>
           <input

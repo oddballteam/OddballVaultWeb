@@ -21,6 +21,142 @@ import type { GroupMembershipRow, GroupRow, ItemKeyRow } from "../types/db";
 import { isAllowedTenantEmail } from "../utils/tenantEmail";
 import { logEvent } from "./auditService";
 
+/** Admin-panel-only: every Group Folder, regardless of the caller's own membership (gated by groups_select_it_sec_admins RLS). */
+export async function listAllGroups(): Promise<GroupRow[]> {
+  const { data, error } = await supabase.from("groups").select("*").order("name");
+  if (error) throw error;
+  return data as GroupRow[];
+}
+
+/**
+ * Creates a new Group Folder and makes the caller its first owner — the
+ * client-side equivalent of scripts/provisionGroup.ts, run by an authenticated
+ * IT/Sec Admin instead of a service-role script. Relies on the
+ * group_memberships_insert_admins RLS carve-out for a brand-new group's first row.
+ */
+export async function createGroupFolder(name: string, oktaGroupId: string, actorUserId: string): Promise<GroupRow> {
+  const { data: self, error: selfError } = await supabase
+    .from("user_directory")
+    .select("public_key")
+    .eq("id", actorUserId)
+    .single();
+  if (selfError) throw selfError;
+
+  const material = await createGroupKeyMaterial();
+  const { data: group, error: groupError } = await supabase
+    .from("groups")
+    .insert({
+      name,
+      okta_group_id: oktaGroupId,
+      public_key: material.publicKeySpki,
+      encrypted_private_key: material.encryptedPrivateKey,
+      private_key_nonce: material.encryptedPrivateKeyNonce,
+    })
+    .select("*")
+    .single();
+  if (groupError) throw groupError;
+
+  const selfPublicKey = await importPublicKey(self.public_key);
+  const wrappedKek = await wrapKekForMember(material.kek, selfPublicKey);
+
+  const { error: membershipError } = await supabase.from("group_memberships").insert({
+    group_id: group.id,
+    user_id: actorUserId,
+    wrapped_group_kek: wrappedKek,
+    role: "admin",
+  });
+  if (membershipError) throw membershipError;
+
+  await logEvent(actorUserId, "group_folder_created", { detail: `Created group folder "${name}"` });
+  return group as GroupRow;
+}
+
+export async function renameGroupFolder(groupId: string, newName: string, actorUserId: string): Promise<void> {
+  const { error } = await supabase.from("groups").update({ name: newName }).eq("id", groupId);
+  if (error) throw error;
+  await logEvent(actorUserId, "group_folder_renamed", { detail: `Renamed group folder to "${newName}"` });
+}
+
+export async function deleteGroupFolder(groupId: string, actorUserId: string, groupName: string): Promise<void> {
+  const { error } = await supabase.from("groups").delete().eq("id", groupId);
+  if (error) throw error;
+  await logEvent(actorUserId, "group_folder_deleted", { detail: `Deleted group folder "${groupName}"` });
+}
+
+/** IT/Sec-Admin-only (see group_memberships_update_it_sec_admins RLS) — the deliberate owner/editor elevation action. */
+export async function setMemberRole(
+  groupId: string,
+  memberId: string,
+  role: "member" | "admin",
+  actorUserId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("group_memberships")
+    .update({ role })
+    .eq("group_id", groupId)
+    .eq("user_id", memberId);
+  if (error) throw error;
+  await logEvent(actorUserId, "role_changed", { detail: `${memberId} -> ${role} in group ${groupId}` });
+}
+
+const lastReconciledAt = new Map<string, number>();
+const RECONCILE_DEBOUNCE_MS = 60_000;
+
+/**
+ * Reconciles group_memberships against live Okta group membership — the only
+ * place membership actually changes, since there is no manual "add member" UI.
+ * Only meaningful for an existing folder ADMIN: adding someone requires the
+ * caller's own unwrapped KEK, which only an existing member holds.
+ *
+ * Known edge case, by design: if the caller isn't themselves an Okta member of
+ * the mapped group, their own membership row gets removed on this same run —
+ * access really is meant to be 100% Okta-driven.
+ */
+export async function reconcileGroupMembership(
+  groupId: string,
+  actorUserId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const lastRun = lastReconciledAt.get(groupId) ?? 0;
+  if (Date.now() - lastRun < RECONCILE_DEBOUNCE_MS) return { ok: true };
+  lastReconciledAt.set(groupId, Date.now());
+
+  try {
+    const { data, error } = await supabase.functions.invoke<{ emails?: string[]; error?: string }>(
+      "group-okta-members",
+      { body: { groupId } },
+    );
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    const oktaEmails = new Set((data?.emails ?? []).map((e) => e.toLowerCase()));
+
+    const currentMembers = await listMembers(groupId);
+    const currentEmails = new Set(currentMembers.map((m) => m.email.toLowerCase()));
+
+    const toAdd = [...oktaEmails].filter((email) => !currentEmails.has(email));
+    const toRemove = currentMembers.filter((m) => !oktaEmails.has(m.email.toLowerCase()));
+
+    for (const email of toAdd) {
+      try {
+        await addMember(groupId, actorUserId, email, "member");
+      } catch (err) {
+        console.error(`reconcileGroupMembership: failed to add ${email}:`, err);
+      }
+    }
+
+    for (const member of toRemove) {
+      try {
+        await removeMemberAndRekey(groupId, member.userId, actorUserId);
+      } catch (err) {
+        console.error(`reconcileGroupMembership: failed to remove ${member.email}:`, err);
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to reconcile with Okta." };
+  }
+}
+
 export interface GroupMemberSummary {
   userId: string;
   email: string;

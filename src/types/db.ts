@@ -96,7 +96,10 @@ export type AuditEventType =
   | "export"
   | "import"
   | "password_changed"
-  | "vault_reset";
+  | "vault_reset"
+  | "group_folder_created"
+  | "group_folder_renamed"
+  | "group_folder_deleted";
 
 export interface AuditLogRow {
   id: string;
