@@ -35,6 +35,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
   const [newFolderName, setNewFolderName] = useState("");
   const [oktaGroupQuery, setOktaGroupQuery] = useState("");
   const [oktaGroupResults, setOktaGroupResults] = useState<OktaGroupSummary[]>([]);
+  const [oktaGroupSearchError, setOktaGroupSearchError] = useState<string | null>(null);
   const [selectedOktaGroup, setSelectedOktaGroup] = useState<OktaGroupSummary | null>(null);
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
@@ -54,10 +55,21 @@ export function AdminDashboardView({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (selectedOktaGroup) return; // don't re-search right after picking a result
+    if (oktaGroupQuery.trim().length < 2) {
+      setOktaGroupResults([]);
+      setOktaGroupSearchError(null);
+      return;
+    }
     const handle = setTimeout(() => {
-      void searchOktaGroups(oktaGroupQuery)
+      setOktaGroupSearchError(null);
+      searchOktaGroups(oktaGroupQuery)
         .then(setOktaGroupResults)
-        .catch(() => setOktaGroupResults([]));
+        .catch((err) => {
+          setOktaGroupResults([]);
+          setOktaGroupSearchError(
+            err instanceof Error ? err.message : "Couldn't search Okta groups — is search-okta-groups deployed?",
+          );
+        });
     }, 250);
     return () => clearTimeout(handle);
   }, [oktaGroupQuery, selectedOktaGroup]);
@@ -254,6 +266,14 @@ export function AdminDashboardView({ userId }: { userId: string }) {
                 </div>
               )}
               {selectedOktaGroup && <p className="muted">Selected: {selectedOktaGroup.name}</p>}
+              {oktaGroupSearchError && <p className="error-text">{oktaGroupSearchError}</p>}
+              {!selectedOktaGroup &&
+                !oktaGroupSearchError &&
+                oktaGroupQuery.trim().length >= 2 &&
+                oktaGroupResults.length === 0 && <p className="muted">No matching Okta groups — keep typing, or check the name.</p>}
+              {oktaGroupQuery && !selectedOktaGroup && (
+                <p className="muted">Pick a result above before creating — typing a name alone won't select it.</p>
+              )}
             </div>
             {groupError && <p className="error-text">{groupError}</p>}
             <button type="submit" disabled={groupBusy || !selectedOktaGroup}>Create Group Folder</button>

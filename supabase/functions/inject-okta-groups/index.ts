@@ -41,8 +41,6 @@ Deno.serve(async (req: Request) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), OKTA_FETCH_TIMEOUT_MS);
 
-    console.log("inject-okta-groups: fetching Okta groups for email:", email);
-
     let response: Response;
     try {
       response = await fetch(
@@ -56,11 +54,7 @@ Deno.serve(async (req: Request) => {
       clearTimeout(timeout);
     }
 
-    console.log("inject-okta-groups: Okta API responded with status:", response.status);
-
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("inject-okta-groups: Okta API error response:", errorText);
       throw new Error(`Okta API returned ${response.status}`);
     }
 
@@ -69,14 +63,11 @@ Deno.serve(async (req: Request) => {
     modifiedClaims.app_metadata = modifiedClaims.app_metadata || {};
     modifiedClaims.app_metadata.groups = groups.map((g) => g.profile.name);
 
-    console.log("inject-okta-groups: injected groups:", modifiedClaims.app_metadata.groups);
-
     return new Response(JSON.stringify({ claims: modifiedClaims }), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     });
-  } catch (err) {
-    console.error("inject-okta-groups: failed to fetch Okta groups", err);
+  } catch {
     return new Response(JSON.stringify({ claims }), {
       headers: { "Content-Type": "application/json" },
       status: 200,

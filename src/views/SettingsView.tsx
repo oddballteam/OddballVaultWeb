@@ -16,6 +16,7 @@ export function SettingsView({ userId }: { userId: string }) {
   const [status, setStatus] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
+  const [importFileName, setImportFileName] = useState<string | null>(null);
   const importFile = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,6 +71,7 @@ export function SettingsView({ userId }: { userId: string }) {
         setStatus(`Imported ${imported} item(s).`);
       }
       if (importFile.current) importFile.current.value = "";
+      setImportFileName(null);
     } catch (err) {
       setImportError(
         err instanceof Error
@@ -117,7 +119,18 @@ export function SettingsView({ userId }: { userId: string }) {
         </p>
         <div className="field-row">
           <label>File</label>
-          <input ref={importFile} type="file" accept=".ovault,.json,.csv" />
+          <div className="file-picker-row">
+            <label htmlFor="import-file" className="file-picker-button">Choose File</label>
+            <input
+              ref={importFile}
+              id="import-file"
+              type="file"
+              accept=".ovault,.json,.csv"
+              className="file-picker-input"
+              onChange={(e) => setImportFileName(e.target.files?.[0]?.name ?? null)}
+            />
+            <span className="muted">{importFileName ?? "No file chosen"}</span>
+          </div>
         </div>
         <div className="field-row">
           <label>Export password (only needed for .ovault files)</label>
