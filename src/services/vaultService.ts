@@ -115,7 +115,10 @@ export async function listItems(
 
   let query = supabase.from("items").select("*").eq("is_deleted", options.includeDeleted ?? false);
   if (options.favoritesOnly) query = query.eq("is_favorite", true);
-  if (options.ownerGroupId) query = query.eq("owner_group_id", options.ownerGroupId);
+  // Group-owned items live in their folder (GroupsView), not the flat personal Vault list —
+  // RLS would otherwise still surface them here too, since group membership alone already
+  // grants visibility regardless of this filter.
+  query = options.ownerGroupId ? query.eq("owner_group_id", options.ownerGroupId) : query.is("owner_group_id", null);
   const { data, error } = await query.order("updated_at", { ascending: false });
   if (error) throw error;
 

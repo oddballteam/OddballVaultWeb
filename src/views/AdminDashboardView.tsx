@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ConfirmDangerModal } from "../components/ConfirmDangerModal";
 import { Dropdown } from "../components/Dropdown";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { listAuditLogs, nukeUserVault } from "../services/adminService";
 import {
   createGroupFolder,
@@ -67,7 +68,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
         .catch((err) => {
           setOktaGroupResults([]);
           setOktaGroupSearchError(
-            err instanceof Error ? err.message : "Couldn't search Okta groups — is search-okta-groups deployed?",
+            err instanceof Error ? err.message : "Couldn't search Okta groups. Is search-okta-groups deployed?",
           );
         });
     }, 250);
@@ -198,11 +199,10 @@ export function AdminDashboardView({ userId }: { userId: string }) {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>User Management</h2>
-          <p className="muted">
-            Permanently deletes every item owned by a user. Does not affect items owned by a Group Folder they
-            belong to, or their access grants to other people's shared items.
-          </p>
+          <h2 style={{ marginTop: 0 }}>
+            User Management
+            <InfoTooltip text="Permanently deletes every item owned by a user. Does not affect items owned by a Group Folder they belong to, or their access grants to other people's shared items." />
+          </h2>
           <div className="field-row">
             <label htmlFor="wipe-email">User email</label>
             <input id="wipe-email" type="email" value={wipeEmail} onChange={(e) => setWipeEmail(e.target.value)} />
@@ -215,13 +215,10 @@ export function AdminDashboardView({ userId }: { userId: string }) {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Group Folders</h2>
-          <p className="muted">
-            Folder visibility is driven entirely by live Okta group membership — there's no
-            manual member list to maintain here. Pick which existing members are folder owners
-            (full control) vs. editors (everyone else, capped — can't delete or manage the
-            folder).
-          </p>
+          <h2 style={{ marginTop: 0 }}>
+            Group Folders
+            <InfoTooltip text="Folder visibility is driven entirely by live Okta group membership. There's no manual member list to maintain here. Pick which existing members are folder owners (full control) vs. editors (everyone else, capped: can't delete or manage the folder)." />
+          </h2>
 
           <form onSubmit={(e) => void handleCreateFolder(e)} style={{ marginBottom: "1rem" }}>
             <div className="field-row">
@@ -270,9 +267,9 @@ export function AdminDashboardView({ userId }: { userId: string }) {
               {!selectedOktaGroup &&
                 !oktaGroupSearchError &&
                 oktaGroupQuery.trim().length >= 2 &&
-                oktaGroupResults.length === 0 && <p className="muted">No matching Okta groups — keep typing, or check the name.</p>}
+                oktaGroupResults.length === 0 && <p className="muted">No matching Okta groups. Keep typing, or check the name.</p>}
               {oktaGroupQuery && !selectedOktaGroup && (
-                <p className="muted">Pick a result above before creating — typing a name alone won't select it.</p>
+                <p className="muted">Pick a result above before creating; typing a name alone won't select it.</p>
               )}
             </div>
             {groupError && <p className="error-text">{groupError}</p>}
@@ -292,7 +289,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
               {expandedGroupId === group.id && (
                 <div style={{ marginLeft: "1rem", marginBottom: "0.5rem" }}>
                   {groupMembers.length === 0 && (
-                    <p className="muted">No synced members yet — an owner needs to view this folder once for it to sync with Okta.</p>
+                    <p className="muted">No synced members yet. An owner needs to view this folder once for it to sync with Okta.</p>
                   )}
                   {groupMembers.map((m) => (
                     <div className="grant-row" key={m.userId}>

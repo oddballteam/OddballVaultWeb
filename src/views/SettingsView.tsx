@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Dropdown } from "../components/Dropdown";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { vaultSession } from "../crypto/session";
 import { AUTO_LOCK_DEFAULT_MINUTES, AUTO_LOCK_OPTIONS_MINUTES } from "../crypto/vaultKey";
 import { getEvents } from "../services/auditService";
@@ -76,7 +77,7 @@ export function SettingsView({ userId }: { userId: string }) {
       setImportError(
         err instanceof Error
           ? err.message
-          : "Import failed — check that the file matches the expected format and try again.",
+          : "Import failed. Check that the file matches the expected format and try again.",
       );
     } finally {
       setImportBusy(false);
@@ -100,8 +101,10 @@ export function SettingsView({ userId }: { userId: string }) {
       </div>
 
       <div className="card">
-        <h3>Export vault</h3>
-        <p className="muted">Decrypted, then re-encrypted under a separate export password — never your master password.</p>
+        <h3>
+          Export vault
+          <InfoTooltip text="Decrypted, then re-encrypted under a separate export password. Never your master password." />
+        </h3>
         <div className="field-row">
           <label>Export password</label>
           <input type="password" value={exportPassword} onChange={(e) => setExportPassword(e.target.value)} />
@@ -110,13 +113,19 @@ export function SettingsView({ userId }: { userId: string }) {
       </div>
 
       <div className="card">
-        <h3>Import vault</h3>
-        <p className="muted">
-          Accepts either a <strong>.ovault</strong> file (this app's own encrypted export, needs the export
-          password below) or a plain <strong>.csv</strong> export from another password manager. Expected CSV
-          headers: <code>title</code> (or <code>name</code>), <code>username</code>, <code>password</code>,{" "}
-          <code>url</code>, <code>notes</code> — only the title column is required, the rest are optional.
-        </p>
+        <h3>
+          Import vault
+          <InfoTooltip
+            text={
+              <>
+                Accepts either a <strong>.ovault</strong> file (this app's own encrypted export, needs the export
+                password below) or a plain <strong>.csv</strong> export from another password manager. Expected CSV
+                headers: <code>title</code> (or <code>name</code>), <code>username</code>, <code>password</code>,{" "}
+                <code>url</code>, <code>notes</code>. Only the title column is required, the rest are optional.
+              </>
+            }
+          />
+        </h3>
         <div className="field-row">
           <label>File</label>
           <div className="file-picker-row">

@@ -49,7 +49,7 @@ export function SetupAccountView({
       <p className="muted">
         Your Okta login secures your account access. Now, create a Master Password to locally
         encrypt your vault. Because we are Zero-Knowledge, not even our servers can read this
-        password — do not lose it, since your vault cannot be recovered without it.
+        password. Do not lose it, since your vault cannot be recovered without it.
       </p>
       <form onSubmit={(e) => void handleSubmit(e)}>
         <div className="field-row">

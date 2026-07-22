@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConfirmDangerModal } from "../components/ConfirmDangerModal";
 import { Dropdown } from "../components/Dropdown";
+import { InfoTooltip } from "../components/InfoTooltip";
 import {
   deleteGroupFolder,
   listMembers,
@@ -109,11 +110,10 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
   if (!selectedGroup) {
     return (
       <div className="detail-panel">
-        <h2>Group Folders</h2>
-        <p className="muted">
-          Membership is driven entirely by Okta group membership — there's no "add member" step
-          here. New folders are created by an IT/Sec Admin from the Admin Panel.
-        </p>
+        <h2>
+          Group Folders
+          <InfoTooltip text="Membership is driven entirely by Okta group membership. There's no manual add-member step here. New folders are created by an IT/Sec Admin from the Admin Panel." />
+        </h2>
         <div className="card">
           {groups.length === 0 && <p className="muted">You aren't a member of any Group Folders yet.</p>}
           {groups.map((group) => (
