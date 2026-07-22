@@ -156,7 +156,7 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
 
         {isAdmin && (
           <div className="card" style={{ marginTop: "1rem" }}>
-            <h4 style={{ marginTop: 0 }}>Manage folder</h4>
+            <h4>Manage folder</h4>
             <form onSubmit={(e) => void handleRename(e)}>
               <div className="field-row">
                 <label htmlFor="folder-name">Folder name</label>

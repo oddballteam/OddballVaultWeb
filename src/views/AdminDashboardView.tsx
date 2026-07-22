@@ -160,7 +160,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
 
       <div className="detail-panel" style={{ margin: "1rem" }}>
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Audit Log</h2>
+          <h2>Audit Log</h2>
           <input
             placeholder="Search by actor, target, item, or action…"
             value={search}
@@ -199,7 +199,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>
+          <h2>
             User Management
             <InfoTooltip text="Permanently deletes every item owned by a user. Does not affect items owned by a Group Folder they belong to, or their access grants to other people's shared items." />
           </h2>
@@ -215,7 +215,7 @@ export function AdminDashboardView({ userId }: { userId: string }) {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>
+          <h2>
             Group Folders
             <InfoTooltip text="Folder visibility is driven entirely by live Okta group membership. There's no manual member list to maintain here. Pick which existing members are folder owners (full control) vs. editors (everyone else, capped: can't delete or manage the folder)." />
           </h2>

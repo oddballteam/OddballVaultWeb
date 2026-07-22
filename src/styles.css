@@ -249,6 +249,11 @@ input:focus, select:focus, textarea:focus {
   padding: 1rem;
   margin-bottom: 0.9rem;
 }
+/* Browser default heading margins are large enough to visibly misalign a
+   card's title from its content — every card heading should sit flush with
+   the top and stay close to what follows, not just the ones that happen to
+   set marginTop inline. */
+.card > h2, .card > h3, .card > h4 { margin-top: 0; margin-bottom: 0.5rem; }
 
 .compact-card {
   width: 100%;
