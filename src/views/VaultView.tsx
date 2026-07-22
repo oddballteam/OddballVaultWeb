@@ -13,6 +13,7 @@ const NEW_ITEM_OPTIONS = Object.entries(ITEM_TYPE_LABELS).map(([value, label]) =
 export function VaultView({ userId, userEmail }: { userId: string; userEmail: string }) {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showMobileDetail, setShowMobileDetail] = useState(false);
@@ -38,6 +39,7 @@ export function VaultView({ userId, userEmail }: { userId: string; userEmail: st
     });
     await refresh();
     setSelectedId(created.id);
+    setJustCreatedId(created.id);
     setShowMobileDetail(true);
   }
 
@@ -63,6 +65,7 @@ export function VaultView({ userId, userEmail }: { userId: string; userEmail: st
             className={`item-card ${item.id === selectedId ? "selected" : ""}`}
             onClick={() => {
               setSelectedId(item.id);
+              setJustCreatedId(null);
               setShowMobileDetail(true);
             }}
           >
@@ -81,6 +84,7 @@ export function VaultView({ userId, userEmail }: { userId: string; userEmail: st
             item={selected}
             userId={userId}
             userEmail={userEmail}
+            startInEdit={selected.id === justCreatedId}
             onChanged={refresh}
             onDeleted={() => { setSelectedId(null); void refresh(); }}
           />

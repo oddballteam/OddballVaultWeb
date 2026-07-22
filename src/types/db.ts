@@ -99,7 +99,8 @@ export type AuditEventType =
   | "vault_reset"
   | "group_folder_created"
   | "group_folder_renamed"
-  | "group_folder_deleted";
+  | "group_folder_deleted"
+  | "external_share_created";
 
 export interface AuditLogRow {
   id: string;
@@ -124,4 +125,15 @@ export interface EnterpriseAuditLogRow {
   actor_email: string;
   target_email: string;
   item_name: string;
+}
+
+/** No title/item reference stored server-side — the server never sees plaintext, even for the creator's own list. */
+export interface ExternalShareRow {
+  id: string;
+  created_by: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+  expires_at: string;
+  burned_at: string | null;
 }

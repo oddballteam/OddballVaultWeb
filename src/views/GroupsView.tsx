@@ -26,6 +26,7 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
   const [isAdmin, setIsAdmin] = useState(false);
   const [items, setItems] = useState<VaultItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,6 +71,7 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
     });
     await refreshItems(selectedGroup.id);
     setSelectedItemId(created.id);
+    setJustCreatedId(created.id);
   }
 
   async function handleRename(e: React.FormEvent) {
@@ -147,7 +149,7 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
           <div
             key={item.id}
             className={`item-card ${item.id === selectedItemId ? "selected" : ""}`}
-            onClick={() => setSelectedItemId(item.id)}
+            onClick={() => { setSelectedItemId(item.id); setJustCreatedId(null); }}
           >
             <div className="title">{item.isFavorite ? "★ " : ""}{item.envelope.title}</div>
             <div className="subtitle">{ITEM_TYPE_LABELS[item.itemType]}{item.envelope.username ? ` · ${item.envelope.username}` : ""}</div>
@@ -185,6 +187,7 @@ export function GroupsView({ userId, userEmail }: { userId: string; userEmail: s
             item={selectedItem}
             userId={userId}
             userEmail={userEmail}
+            startInEdit={selectedItem.id === justCreatedId}
             onChanged={() => void refreshItems(selectedGroup.id)}
             onDeleted={() => { setSelectedItemId(null); void refreshItems(selectedGroup.id); }}
           />

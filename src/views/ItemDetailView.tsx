@@ -1,5 +1,5 @@
 import { Eye, EyeOff, FolderInput, Pencil, Plus, Save, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AttachmentsPanel } from "../components/AttachmentsPanel";
 import { Dropdown } from "../components/Dropdown";
 import { PasswordField } from "../components/PasswordField";
@@ -28,7 +28,8 @@ const FIELDS_BY_TYPE: Record<ItemType, FieldConfig[]> = {
     { key: "username", label: "Username" },
     { key: "password", label: "Password", sensitive: true, allowGenerate: true },
     { key: "url", label: "URL" },
-    { key: "totpSecret", label: "TOTP secret", sensitive: true },
+    // totpSecret is deliberately NOT here — it's rendered specially below (rotating
+    // code + copy in view mode, raw secret + reveal only while editing), never both.
   ],
   note: [],
   card: [
@@ -66,12 +67,15 @@ export function ItemDetailView({
   item,
   userId,
   userEmail,
+  startInEdit = false,
   onChanged,
   onDeleted,
 }: {
   item: VaultItem;
   userId: string;
   userEmail: string;
+  /** Brand-new records should land straight in edit mode, not the (empty) view screen. Only honored once per item id. */
+  startInEdit?: boolean;
   onChanged: () => void;
   onDeleted: () => void;
 }) {
@@ -79,19 +83,26 @@ export function ItemDetailView({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(startInEdit);
   const [revealedCustomFields, setRevealedCustomFields] = useState<Set<number>>(new Set());
   const [myGroups, setMyGroups] = useState<GroupRow[]>([]);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const editModeSetForId = useRef(item.id);
 
   useEffect(() => {
     setEnvelope(item.envelope);
     setDirty(false);
-    setIsEditing(false);
     setRevealedCustomFields(new Set());
     setMoveError(null);
-  }, [item.id, item.envelope]);
+    // Only apply startInEdit the first time we see THIS item id — a later
+    // envelope refresh for the same item (e.g. right after Save) must not
+    // re-force edit mode back open.
+    if (editModeSetForId.current !== item.id) {
+      editModeSetForId.current = item.id;
+      setIsEditing(startInEdit);
+    }
+  }, [item.id, item.envelope, startInEdit]);
 
   useEffect(() => {
     void listMyGroups(userId).then(setMyGroups);
@@ -251,6 +262,7 @@ export function ItemDetailView({
       {sharing && (
         <ShareDialog
           itemId={item.id}
+          envelope={envelope}
           userId={userId}
           userEmail={userEmail}
           canManage={canManageSharing}
@@ -283,7 +295,17 @@ export function ItemDetailView({
           ),
         )}
 
-        {item.itemType === "login" && envelope.totpSecret && <TotpWidget secret={envelope.totpSecret} />}
+        {item.itemType === "login" &&
+          (isEditing ? (
+            <PasswordField
+              label="TOTP secret"
+              value={envelope.totpSecret ?? ""}
+              onChange={editable ? (v) => setField("totpSecret", v) : undefined}
+              readOnly={!editable}
+            />
+          ) : (
+            envelope.totpSecret && <TotpWidget secret={envelope.totpSecret} />
+          ))}
 
         {hasNotes && (
           <PasswordField

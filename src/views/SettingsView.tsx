@@ -5,9 +5,16 @@ import { vaultSession } from "../crypto/session";
 import { AUTO_LOCK_DEFAULT_MINUTES, AUTO_LOCK_OPTIONS_MINUTES } from "../crypto/vaultKey";
 import { getEvents } from "../services/auditService";
 import { exportItems, importItems } from "../services/exportService";
+import { listMyExternalShares, revokeExternalShare, type ExternalShareSummary } from "../services/externalShareService";
 import { importCsv } from "../services/importService";
 import { listItems } from "../services/vaultService";
 import type { AuditLogRow } from "../types/db";
+
+function shareStatus(share: ExternalShareSummary): "Used" | "Expired" | "Active" {
+  if (share.burnedAt) return "Used";
+  if (new Date(share.expiresAt) < new Date()) return "Expired";
+  return "Active";
+}
 
 export function SettingsView({ userId }: { userId: string }) {
   const [events, setEvents] = useState<AuditLogRow[]>([]);
@@ -19,10 +26,27 @@ export function SettingsView({ userId }: { userId: string }) {
   const [importBusy, setImportBusy] = useState(false);
   const [importFileName, setImportFileName] = useState<string | null>(null);
   const importFile = useRef<HTMLInputElement>(null);
+  const [externalShares, setExternalShares] = useState<ExternalShareSummary[]>([]);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   useEffect(() => {
     void getEvents().then(setEvents);
+    void refreshExternalShares();
   }, []);
+
+  async function refreshExternalShares() {
+    setExternalShares(await listMyExternalShares());
+  }
+
+  async function handleRevokeShare(id: string) {
+    setShareError(null);
+    try {
+      await revokeExternalShare(id);
+      await refreshExternalShares();
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Failed to revoke link.");
+    }
+  }
 
   function handleAutoLockChange(minutes: number) {
     setAutoLockMinutes(minutes);
@@ -150,6 +174,29 @@ export function SettingsView({ userId }: { userId: string }) {
       </div>
 
       {status && <p className="muted">{status}</p>}
+
+      <div className="card">
+        <h3>
+          External share links
+          <InfoTooltip text="One-time links created from a record's Share externally button. Each one stops working after a single view or its expiry, whichever comes first. Revoking one here disables it immediately, even if it was never opened." />
+        </h3>
+        {shareError && <p className="error-text">{shareError}</p>}
+        {externalShares.length === 0 && <p className="muted">No share links yet.</p>}
+        {externalShares.map((share) => {
+          const status = shareStatus(share);
+          return (
+            <div className="grant-row" key={share.id}>
+              <span>
+                Created {new Date(share.createdAt).toLocaleString()}{" "}
+                <span className="muted">({status}, expires {new Date(share.expiresAt).toLocaleString()})</span>
+              </span>
+              {status === "Active" && (
+                <button className="danger" onClick={() => void handleRevokeShare(share.id)}>Revoke</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       <div className="card">
         <h3>Audit log</h3>

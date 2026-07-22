@@ -1,3 +1,4 @@
+import { Globe, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   changeRole,
@@ -8,15 +9,18 @@ import {
   transferOwnership,
   type GrantSummary,
 } from "../services/sharingService";
+import type { ItemEnvelope } from "../types/vaultItem";
 import { ROLE_LABELS, type ItemRole } from "../types/vaultItem";
 import { isAllowedTenantEmail } from "../utils/tenantEmail";
 import { Dropdown } from "./Dropdown";
+import { ExternalShareDialog } from "./ExternalShareDialog";
 
 const SHAREABLE_ROLES: Exclude<ItemRole, "owner">[] = ["view", "edit", "edit_share"];
 const SHAREABLE_ROLE_OPTIONS = SHAREABLE_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
 export function ShareDialog({
   itemId,
+  envelope,
   userId,
   userEmail,
   canManage,
@@ -25,6 +29,7 @@ export function ShareDialog({
   onChanged,
 }: {
   itemId: string;
+  envelope: ItemEnvelope;
   userId: string;
   userEmail: string;
   canManage: boolean;
@@ -38,6 +43,7 @@ export function ShareDialog({
   const [role, setRole] = useState<Exclude<ItemRole, "owner">>("view");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"internal" | "external">("internal");
 
   async function refresh() {
     setGrants(await listGrants(itemId));
@@ -116,68 +122,87 @@ export function ShareDialog({
 
   return (
     <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <h3>Sharing</h3>
-        <button className="secondary" onClick={onClose}>Close</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0 }}>{mode === "internal" ? "Sharing" : "Share externally"}</h3>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {canManage && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setMode(mode === "internal" ? "external" : "internal")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              {mode === "internal" ? <Globe size={16} /> : <Users size={16} />}
+              {mode === "internal" ? "Share externally" : "Back"}
+            </button>
+          )}
+          <button className="secondary" onClick={onClose}>Close</button>
+        </div>
       </div>
 
-      {grants.map((grant) => (
-        <div className="grant-row" key={`${grant.granteeType}:${grant.granteeId}`}>
-          <span>
-            {grant.displayName} <span className="muted">({grant.granteeType})</span>
-          </span>
-          {grant.role === "owner" ? (
-            <span className="muted">{ROLE_LABELS.owner}</span>
-          ) : canManage ? (
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <Dropdown<Exclude<ItemRole, "owner">>
-                label={ROLE_LABELS[grant.role]}
-                options={SHAREABLE_ROLE_OPTIONS}
-                disabled={busy}
-                onSelect={(newRole) => void handleRoleChange(grant, newRole)}
-              />
-              {isOwner && (
-                <button className="secondary" disabled={busy} onClick={() => void handleTransferOwnership(grant)}>
-                  Transfer Ownership
-                </button>
+      {mode === "external" ? (
+        canManage && <ExternalShareDialog envelope={envelope} itemId={itemId} userId={userId} />
+      ) : (
+        <>
+          {grants.map((grant) => (
+            <div className="grant-row" key={`${grant.granteeType}:${grant.granteeId}`}>
+              <span>
+                {grant.displayName} <span className="muted">({grant.granteeType})</span>
+              </span>
+              {grant.role === "owner" ? (
+                <span className="muted">{ROLE_LABELS.owner}</span>
+              ) : canManage ? (
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <Dropdown<Exclude<ItemRole, "owner">>
+                    label={ROLE_LABELS[grant.role]}
+                    options={SHAREABLE_ROLE_OPTIONS}
+                    disabled={busy}
+                    onSelect={(newRole) => void handleRoleChange(grant, newRole)}
+                  />
+                  {isOwner && (
+                    <button className="secondary" disabled={busy} onClick={() => void handleTransferOwnership(grant)}>
+                      Transfer Ownership
+                    </button>
+                  )}
+                  <button className="danger" disabled={busy} onClick={() => void handleRevoke(grant)}>Revoke</button>
+                </div>
+              ) : (
+                <span className="muted">{ROLE_LABELS[grant.role]}</span>
               )}
-              <button className="danger" disabled={busy} onClick={() => void handleRevoke(grant)}>Revoke</button>
             </div>
-          ) : (
-            <span className="muted">{ROLE_LABELS[grant.role]}</span>
-          )}
-        </div>
-      ))}
+          ))}
 
-      {canManage && (
-        <form onSubmit={(e) => void handleShare(e)} style={{ marginTop: "1rem" }}>
-          <div className="field-row">
-            <label htmlFor="share-email">Share with (email)</label>
-            <input
-              id="share-email"
-              type="email"
-              list="share-email-suggestions"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <datalist id="share-email-suggestions">
-              {emailSuggestions.map((suggestion) => (
-                <option key={suggestion} value={suggestion} />
-              ))}
-            </datalist>
-          </div>
-          <div className="field-row">
-            <label>Role</label>
-            <Dropdown<Exclude<ItemRole, "owner">>
-              label={ROLE_LABELS[role]}
-              options={SHAREABLE_ROLE_OPTIONS}
-              onSelect={setRole}
-            />
-          </div>
-          {error && <p className="error-text">{error}</p>}
-          <button type="submit" disabled={busy}>Share</button>
-        </form>
+          {canManage && (
+            <form onSubmit={(e) => void handleShare(e)} style={{ marginTop: "1rem" }}>
+              <div className="field-row">
+                <label htmlFor="share-email">Share with (email)</label>
+                <input
+                  id="share-email"
+                  type="email"
+                  list="share-email-suggestions"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <datalist id="share-email-suggestions">
+                  {emailSuggestions.map((suggestion) => (
+                    <option key={suggestion} value={suggestion} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="field-row">
+                <label>Role</label>
+                <Dropdown<Exclude<ItemRole, "owner">>
+                  label={ROLE_LABELS[role]}
+                  options={SHAREABLE_ROLE_OPTIONS}
+                  onSelect={setRole}
+                />
+              </div>
+              {error && <p className="error-text">{error}</p>}
+              <button type="submit" disabled={busy}>Share</button>
+            </form>
+          )}
+        </>
       )}
     </div>
   );

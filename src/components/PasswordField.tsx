@@ -36,14 +36,14 @@ export function PasswordField({
     <div className="field-row">
       <label>{label}</label>
       {multiline ? (
-        // ponytail: masked by substituting dots rather than a native mask (textarea has none), so
-        // editing while masked would edit the dots, not the real value — requires Reveal first.
-        <textarea
-          rows={4}
-          value={visible ? value : "•".repeat(value.length)}
-          readOnly={readOnly || !visible}
-          onChange={(e) => onChange?.(e.target.value)}
-        />
+        readOnly ? (
+          // ponytail: dot-replacement masking is only safe when truly read-only — typing into a
+          // dot-replaced value would corrupt the real content, since a textarea has no native
+          // mask like <input type="password"> does. Editable mode below is never masked instead.
+          <textarea rows={4} value={visible ? value : "•".repeat(value.length)} readOnly />
+        ) : (
+          <textarea rows={4} value={value} onChange={(e) => onChange?.(e.target.value)} />
+        )
       ) : (
         <input
           type={visible ? "text" : "password"}
@@ -53,9 +53,12 @@ export function PasswordField({
         />
       )}
       <div className="field-actions">
-        <button type="button" className="secondary" onClick={() => setVisible((v) => !v)}>
-          {visible ? "Hide" : "Reveal"}
-        </button>
+        {/* Multiline content is never masked while editable — the toggle would be a no-op then. */}
+        {(!multiline || readOnly) && (
+          <button type="button" className="secondary" onClick={() => setVisible((v) => !v)}>
+            {visible ? "Hide" : "Reveal"}
+          </button>
+        )}
         <button type="button" className="secondary" onClick={() => void copy()}>
           Copy
         </button>

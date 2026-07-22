@@ -8,6 +8,7 @@ import { hasAccount } from "./services/accountService";
 import { AdminDashboardView } from "./views/AdminDashboardView";
 import { LoginView } from "./views/LoginView";
 import { SetupAccountView } from "./views/SetupAccountView";
+import { SharedLinkView } from "./views/SharedLinkView";
 import { SSORedirectView } from "./views/SSORedirectView";
 import { UnlockView } from "./views/UnlockView";
 import { VaultShell } from "./views/VaultShell";
@@ -19,6 +20,9 @@ export default function App() {
           reachable before the auth gate below, since landing here means
           "not authenticated yet, start a fresh login." */}
       <Route path="/sso" element={<SSORedirectView />} />
+      {/* Public, unauthenticated one-time share link — no Okta login required.
+          The decryption key lives only in the URL fragment, read client-side. */}
+      <Route path="/shared/:id" element={<SharedLinkView />} />
       <Route path="/*" element={<AuthenticatedApp />} />
     </Routes>
   );
